@@ -63,6 +63,7 @@ set(INCLUDE_FILES
     ${INCLUDE_FILES_PREFIX}/enet.h
     ${INCLUDE_FILES_PREFIX}/list.h
     ${INCLUDE_FILES_PREFIX}/protocol.h
+    ${INCLUDE_FILES_PREFIX}/ssl.h
     ${INCLUDE_FILES_PREFIX}/time.h
     ${INCLUDE_FILES_PREFIX}/types.h
     ${INCLUDE_FILES_PREFIX}/unix.h
@@ -78,6 +79,7 @@ set(SOURCE_FILES
     packet.c
     peer.c
     protocol.c
+    ssl.c
     unix.c
     win32.c)
 
@@ -88,9 +90,12 @@ add_library(enet STATIC
     ${INCLUDE_FILES}
     ${SOURCE_FILES}
 )
-
+    
+find_package(OpenSSL REQUIRED)
 if (MINGW)
-    target_link_libraries(enet winmm ws2_32)
+    target_link_libraries(enet winmm ws2_32 OpenSSL::SSL OpenSSL::Crypto)
+else()
+    target_link_libraries(enet OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
 install(TARGETS enet

@@ -385,7 +385,7 @@ enet_protocol_handle_connect (ENetHost * host, ENetProtocolHeader * header, ENet
     }
 
     mtu = ENET_NET_TO_HOST_32 (command -> connect.mtu);
-    packetHeaderSize = enet_socket_get_header_size (host -> socket);
+    packetHeaderSize = enet_ssl_socket_get_header_size (host -> socket);
 
     if (mtu < ENET_PROTOCOL_MINIMUM_MTU - packetHeaderSize)
       mtu = ENET_PROTOCOL_MINIMUM_MTU - packetHeaderSize;
@@ -1032,7 +1032,7 @@ enet_protocol_handle_verify_connect (ENetHost * host, ENetEvent * event, ENetPee
     peer -> outgoingSessionID = command -> verifyConnect.outgoingSessionID;
 
     mtu = ENET_NET_TO_HOST_32 (command -> verifyConnect.mtu);
-    packetHeaderSize = enet_socket_get_header_size(host -> socket);
+    packetHeaderSize = enet_ssl_socket_get_header_size(host -> socket);
 
     if (mtu < ENET_PROTOCOL_MINIMUM_MTU - packetHeaderSize)
       mtu = ENET_PROTOCOL_MINIMUM_MTU - packetHeaderSize;
@@ -1302,10 +1302,10 @@ enet_protocol_receive_incoming_commands (ENetHost * host, ENetEvent * event)
        buffer.data = host -> packetData [0];
        buffer.dataLength = sizeof (host -> packetData [0]);
 
-       receivedLength = enet_socket_receive (host -> socket,
-                                             & host -> receivedAddress,
-                                             & buffer,
-                                             1);
+       receivedLength = enet_ssl_socket_receive (host -> socket,
+                                                 & host -> receivedAddress,
+                                                 & buffer,
+                                                 1);
 
        if (receivedLength < 0)
          return -1;
@@ -1706,7 +1706,7 @@ enet_protocol_send_outgoing_commands (ENetHost * host, ENetEvent * event, int ch
 
             // find the next higher MTU
             testMtu = 0;
-            packetHeaderSize = enet_socket_get_header_size (host -> socket);
+            packetHeaderSize = enet_ssl_socket_get_header_size (host -> socket);
             for (int i = 0; i < ENET_PROTOCOL_POTENTIAL_MTU_COUNT; i++) 
             {
                 if (currentPeer -> mtu < potentialMtus [i] - packetHeaderSize)
@@ -1811,7 +1811,7 @@ enet_protocol_send_outgoing_commands (ENetHost * host, ENetEvent * event, int ch
 
         currentPeer -> lastSendTime = host -> serviceTime;
 
-        sentLength = enet_socket_send (host -> socket, & currentPeer -> address, host -> buffers, host -> bufferCount);
+        sentLength = enet_ssl_socket_send (host -> socket, & currentPeer -> address, host -> buffers, host -> bufferCount);
 
         enet_protocol_remove_sent_unreliable_commands (currentPeer);
 
@@ -1989,7 +1989,7 @@ enet_host_service (ENetHost * host, ENetEvent * event, enet_uint32 timeout)
 
           waitCondition = ENET_SOCKET_WAIT_RECEIVE | ENET_SOCKET_WAIT_INTERRUPT;
 
-          if (enet_socket_wait (host -> socket, & waitCondition, ENET_TIME_DIFFERENCE (timeout, host -> serviceTime)) != 0)
+          if (enet_ssl_socket_wait (host -> socket, & waitCondition, ENET_TIME_DIFFERENCE (timeout, host -> serviceTime)) != 0)
             return -1;
        }
        while (waitCondition & ENET_SOCKET_WAIT_INTERRUPT);

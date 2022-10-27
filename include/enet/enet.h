@@ -18,6 +18,7 @@ extern "C"
 #include "enet/unix.h"
 #endif
 
+#include "enet/ssl.h"
 #include "enet/types.h"
 #include "enet/protocol.h"
 #include "enet/list.h"
@@ -91,6 +92,62 @@ typedef struct _ENetAddress
    enet_uint32 host;
    enet_uint16 port;
 } ENetAddress;
+
+/**
+ * ENet Ssl Socket
+ * 
+ * ENet Ssl Socket is an API wrapper around OpenSSL to provide a convenient
+ * way of using DTLS encryption. The API is intentionally designed to mimic
+ * the enet_socket_* APIs to make switching between unencrypted and encrypted
+ * channels as easy as possible.
+ */
+typedef enum _ENetSslMode
+{
+   ENET_SSL_MODE_NONE,
+   ENET_SSL_MODE_SERVER,
+   ENET_SSL_MODE_CLIENT
+} ENetSslMode;
+
+typedef enum _ENetSslSocketSonnectionState
+{
+   ENET_SSL_SOCKET_CONNECTION_STATE_NONE,
+   ENET_SSL_SOCKET_CONNECTION_STATE_LISTENING,
+   ENET_SSL_SOCKET_CONNECTION_STATE_ACCEPTING,
+   ENET_SSL_SOCKET_CONNECTION_STATE_CONNECTING,
+   ENET_SSL_SOCKET_CONNECTION_STATE_CONNECTED
+} ENetSslSocketSonnectionState;
+
+typedef struct _ENetSslConfiguration
+{
+   ENetSslMode   mode;
+   // Server Params
+   const char *  certificatePath;
+   const char *  privateKeyPath;
+   // Client Params
+   int           validateCertificate;
+   const char *  rootCertificatePath;
+} ENetSslConfiguration;
+
+typedef struct _ENetSslSocket
+{
+   ENetSslMode   mode;
+   ENetSslCtx *  ctx;
+   ENetSocket    socket;
+   ENetList      connectionList;
+   enet_uint8    sendBuffer [ENET_PROTOCOL_MAXIMUM_MTU];
+} ENetSslSocket;
+
+typedef struct _ENetSslSocketConnection
+{
+   ENetListNode                  connectionList;
+   ENetSslSocketSonnectionState  state;
+   ENetAddress                   address;
+   ENetSocket                    socket;
+   struct timeval                timeout;
+   enet_uint32                   lastReadTime;
+   ENetSsl *                     ssl;
+   ENetSslBio *                  bio;
+} ENetSslSocketConnection;
 
 /**
  * Packet flag bit constants.
@@ -348,6 +405,13 @@ typedef enet_uint32 (ENET_CALLBACK * ENetChecksumCallback) (const ENetBuffer * b
 /** Callback for intercepting received raw UDP packets. Should return 1 to intercept, 0 to ignore, or -1 to propagate an error. */
 typedef int (ENET_CALLBACK * ENetInterceptCallback) (struct _ENetHost * host, struct _ENetEvent * event);
  
+typedef enum _ENetHostSslMode
+{
+   ENET_HOST_SSL_MODE_NONE = 0,
+   ENET_HOST_SSL_MODE_CLIENT = 1,
+   ENET_HOST_SSL_MODE_SERVER = 2
+} ENetHostSslMode;
+
 /** An ENet host for communicating with peers.
   *
   * No fields should be modified unless otherwise stated.
@@ -366,7 +430,7 @@ typedef int (ENET_CALLBACK * ENetInterceptCallback) (struct _ENetHost * host, st
   */
 typedef struct _ENetHost
 {
-   ENetSocket           socket;
+   ENetSslSocket *      socket;
    ENetAddress          address;                     /**< Internet address of the host */
    enet_uint32          incomingBandwidth;           /**< downstream bandwidth of the host */
    enet_uint32          outgoingBandwidth;           /**< upstream bandwidth of the host */
@@ -506,6 +570,7 @@ ENET_API ENetSocket enet_socket_accept (ENetSocket, ENetAddress *);
 ENET_API int        enet_socket_connect (ENetSocket, const ENetAddress *);
 ENET_API int        enet_socket_send (ENetSocket, const ENetAddress *, const ENetBuffer *, size_t);
 ENET_API int        enet_socket_receive (ENetSocket, ENetAddress *, ENetBuffer *, size_t);
+ENET_API int        enet_socket_peek_address (ENetSocket, ENetAddress *);
 ENET_API int        enet_socket_wait (ENetSocket, enet_uint32 *, enet_uint32);
 ENET_API int        enet_socket_set_option (ENetSocket, ENetSocketOption, int);
 ENET_API int        enet_socket_get_option (ENetSocket, ENetSocketOption, int *);
@@ -515,6 +580,23 @@ ENET_API void       enet_socket_destroy (ENetSocket);
 ENET_API int        enet_socketset_select (ENetSocket, ENetSocketSet *, ENetSocketSet *, enet_uint32);
 
 /** @} */
+
+/** @defgroup ssl ENet ssl functions
+    @{
+*/
+ENET_API ENetSslSocket *  enet_ssl_socket_create (const ENetSslConfiguration *);
+ENET_API int              enet_ssl_socket_bind (ENetSslSocket *, const ENetAddress *);
+ENET_API int              enet_ssl_socket_get_address (const ENetSslSocket *, ENetAddress *);
+ENET_API int              enet_ssl_socket_send (ENetSslSocket *, const ENetAddress *, const ENetBuffer *, size_t);
+ENET_API int              enet_ssl_socket_receive (ENetSslSocket *, ENetAddress *, ENetBuffer *, size_t);
+ENET_API int              enet_ssl_socket_wait (ENetSslSocket *, enet_uint32 *, enet_uint32);
+ENET_API int              enet_ssl_socket_set_option (ENetSslSocket *, ENetSocketOption, int);
+ENET_API int              enet_ssl_socket_get_option (const ENetSslSocket *, ENetSocketOption, int *);
+ENET_API int              enet_ssl_socket_get_header_size (const ENetSslSocket*);
+ENET_API void             enet_ssl_socket_destroy (ENetSslSocket *);
+
+/** @} */
+
 
 /** @defgroup Address ENet address functions
     @{
@@ -560,14 +642,23 @@ ENET_API int enet_address_get_host_ip (const ENetAddress * address, char * hostN
 */
 ENET_API int enet_address_get_host (const ENetAddress * address, char * hostName, size_t nameLength);
 
+/** Compares whether two enet addresses are the same.
+    @param lAddress   left hand address to compare
+    @param rAddress   right hand address to compare
+    @retval 1 if the two addresses are equal
+    @retval 0 if the two addresses are not equal
+*/
+ENET_API int enet_address_equal (const ENetAddress * lAddress, const ENetAddress * rAddress);
+
 /** @} */
 
 ENET_API ENetPacket * enet_packet_create (const void *, size_t, enet_uint32);
 ENET_API void         enet_packet_destroy (ENetPacket *);
 ENET_API int          enet_packet_resize  (ENetPacket *, size_t);
 ENET_API enet_uint32  enet_crc32 (const ENetBuffer *, size_t);
-                
+
 ENET_API ENetHost * enet_host_create (const ENetAddress *, size_t, size_t, enet_uint32, enet_uint32);
+ENET_API ENetHost * enet_host_create_ssl (const ENetAddress *, size_t, size_t, enet_uint32, enet_uint32, const ENetSslConfiguration *);
 ENET_API void       enet_host_destroy (ENetHost *);
 ENET_API ENetPeer * enet_host_connect (ENetHost *, const ENetAddress *, size_t, enet_uint32);
 ENET_API int        enet_host_check_events (ENetHost *, ENetEvent *);

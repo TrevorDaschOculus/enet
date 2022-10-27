@@ -523,6 +523,46 @@ enet_socket_receive (ENetSocket socket,
 }
 
 int
+enet_socket_peek_address (ENetSocket socket,
+                          ENetAddress * address)
+{
+    if (address == NULL)
+        return -1;
+
+    struct msghdr msgHdr;
+    struct sockaddr_in sin;
+    int recvLength;
+
+    memset (& msgHdr, 0, sizeof (struct msghdr));
+
+    int tmpData;
+    ENetBuffer tmpBuf;
+    tmpBuf.data = & tmpData;
+    tmpBuf.dataLength = sizeof (tmpData);
+
+    msgHdr.msg_name = &sin;
+    msgHdr.msg_namelen = sizeof (struct sockaddr_in);
+
+    msgHdr.msg_iov = (struct iovec *)& tmpBuf;
+    msgHdr.msg_iovlen = 1;
+
+    recvLength = recvmsg (socket, & msgHdr, MSG_PEEK | MSG_NOSIGNAL | MSG_DONTWAIT);
+
+    if (recvLength == -1)
+    {
+      if (errno == EWOULDBLOCK || errno == EAGAIN)
+        return 0;
+      else if (errno != EMSGSIZE)
+        return -1;
+    }
+
+    address -> host = (enet_uint32)sin.sin_addr.s_addr;
+    address -> port = ENET_NET_TO_HOST_16 (sin.sin_port);
+
+    return 1;
+}
+
+int
 enet_socketset_select (ENetSocket maxSocket, ENetSocketSet * readSet, ENetSocketSet * writeSet, enet_uint32 timeout)
 {
     struct timeval timeVal;

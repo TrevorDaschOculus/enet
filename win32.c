@@ -400,6 +400,52 @@ enet_socket_receive (ENetSocket socket,
 }
 
 int
+enet_socket_peek_address (ENetSocket socket,
+                          ENetAddress * address)
+{
+    if (address == NULL)
+        return -1;
+
+    INT sinLength = sizeof (struct sockaddr_in);
+    DWORD flags = MSG_PEEK,
+          recvLength = 0;
+    struct sockaddr_in sin;
+
+    int tmpData;
+    ENetBuffer tmpBuf;
+    tmpBuf.data = & tmpData;
+    tmpBuf.dataLength = sizeof (tmpData);
+
+    if (WSARecvFrom (socket,
+                     (LPWSABUF)& tmpBuf,
+                     (DWORD)1,
+                     & recvLength,
+                     & flags,
+                     (struct sockaddr *) & sin,
+                     & sinLength,
+                     NULL,
+                     NULL) == SOCKET_ERROR)
+    {
+       switch (WSAGetLastError ())
+       {
+       case WSAEWOULDBLOCK:
+       case WSAECONNRESET:
+          return 0;
+       case WSAEMSGSIZE:
+         // this is expected because we passed in a 1 byte buffer
+         break;
+       default:
+         return -1;
+       }
+    }
+
+    address -> host = (enet_uint32) sin.sin_addr.s_addr;
+    address -> port = ENET_NET_TO_HOST_16 (sin.sin_port);
+
+    return 1;
+}
+
+int
 enet_socketset_select (ENetSocket maxSocket, ENetSocketSet * readSet, ENetSocketSet * writeSet, enet_uint32 timeout)
 {
     struct timeval timeVal;

@@ -28,6 +28,29 @@
 ENetHost *
 enet_host_create (const ENetAddress * address, size_t peerCount, size_t channelLimit, enet_uint32 incomingBandwidth, enet_uint32 outgoingBandwidth)
 {
+   return enet_host_create_ssl (address, peerCount, channelLimit, incomingBandwidth, outgoingBandwidth, NULL);
+}
+
+
+/** Creates a host for communicating to peers over an SSL connection.
+
+    @param address   the address at which other peers may connect to this host.  If NULL, then no peers may connect to the host.
+    @param peerCount the maximum number of peers that should be allocated for the host.
+    @param channelLimit the maximum number of channels allowed; if 0, then this is equivalent to ENET_PROTOCOL_MAXIMUM_CHANNEL_COUNT
+    @param incomingBandwidth downstream bandwidth of the host in bytes/second; if 0, ENet will assume unlimited bandwidth.
+    @param outgoingBandwidth upstream bandwidth of the host in bytes/second; if 0, ENet will assume unlimited bandwidth.
+    @param sslConfiguration The SSL configuration for this host. If set to NULL, traffic will be sent unencrypted.
+
+    @returns the host on success and NULL on failure
+
+    @remarks ENet will strategically drop packets on specific sides of a connection between hosts
+    to ensure the host's bandwidth is not overwhelmed.  The bandwidth parameters also determine
+    the window size of a connection which limits the amount of reliable packets that may be in transit
+    at any given time.
+*/
+ENetHost *
+enet_host_create_ssl (const ENetAddress * address, size_t peerCount, size_t channelLimit, enet_uint32 incomingBandwidth, enet_uint32 outgoingBandwidth, const ENetSslConfiguration * sslConfiguration)
+{
     ENetHost * host;
     ENetPeer * currentPeer;
 
@@ -48,11 +71,12 @@ enet_host_create (const ENetAddress * address, size_t peerCount, size_t channelL
     }
     memset (host -> peers, 0, peerCount * sizeof (ENetPeer));
 
-    host -> socket = enet_socket_create (ENET_SOCKET_TYPE_DATAGRAM);
-    if (host -> socket == ENET_SOCKET_NULL || (address != NULL && enet_socket_bind (host -> socket, address) < 0))
+    host -> socket = enet_ssl_socket_create (sslConfiguration);
+
+    if (host -> socket == NULL || enet_ssl_socket_bind (host -> socket, address) < 0)
     {
-       if (host -> socket != ENET_SOCKET_NULL)
-         enet_socket_destroy (host -> socket);
+       if (host -> socket != NULL)
+          enet_ssl_socket_destroy (host -> socket);
 
        enet_free (host -> peers);
        enet_free (host);
@@ -60,13 +84,13 @@ enet_host_create (const ENetAddress * address, size_t peerCount, size_t channelL
        return NULL;
     }
 
-    enet_socket_set_option (host -> socket, ENET_SOCKOPT_NONBLOCK, 1);
-    enet_socket_set_option (host -> socket, ENET_SOCKOPT_BROADCAST, 1);
-    enet_socket_set_option (host -> socket, ENET_SOCKOPT_RCVBUF, ENET_HOST_RECEIVE_BUFFER_SIZE);
-    enet_socket_set_option (host -> socket, ENET_SOCKOPT_SNDBUF, ENET_HOST_SEND_BUFFER_SIZE);
+    enet_ssl_socket_set_option (host -> socket, ENET_SOCKOPT_NONBLOCK, 1);
+    enet_ssl_socket_set_option (host -> socket, ENET_SOCKOPT_BROADCAST, 1);
+    enet_ssl_socket_set_option (host -> socket, ENET_SOCKOPT_RCVBUF, ENET_HOST_RECEIVE_BUFFER_SIZE);
+    enet_ssl_socket_set_option (host -> socket, ENET_SOCKOPT_SNDBUF, ENET_HOST_SEND_BUFFER_SIZE);
 
-    if (address != NULL && enet_socket_get_address (host -> socket, & host -> address) < 0)   
-      host -> address = * address;
+    if (address != NULL && enet_ssl_socket_get_address (host -> socket, & host -> address) < 0)
+       host -> address = * address;    
 
     if (! channelLimit || channelLimit > ENET_PROTOCOL_MAXIMUM_CHANNEL_COUNT)
       channelLimit = ENET_PROTOCOL_MAXIMUM_CHANNEL_COUNT;
@@ -82,7 +106,7 @@ enet_host_create (const ENetAddress * address, size_t peerCount, size_t channelL
     host -> outgoingBandwidth = outgoingBandwidth;
     host -> bandwidthThrottleEpoch = 0;
     host -> recalculateBandwidthLimits = 0;
-    host -> mtu = ENET_PROTOCOL_MINIMUM_MTU - enet_socket_get_header_size (host -> socket);
+    host -> mtu = ENET_PROTOCOL_MINIMUM_MTU - enet_ssl_socket_get_header_size (host -> socket);
     host -> peerCount = peerCount;
     host -> commandCount = 0;
     host -> bufferCount = 0;
@@ -144,7 +168,7 @@ enet_host_destroy (ENetHost * host)
     if (host == NULL)
       return;
 
-    enet_socket_destroy (host -> socket);
+    enet_ssl_socket_destroy (host -> socket);
 
     for (currentPeer = host -> peers;
          currentPeer < & host -> peers [host -> peerCount];
