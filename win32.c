@@ -244,7 +244,7 @@ enet_socket_get_option (ENetSocket socket, ENetSocketOption option, int * value)
     switch (option)
     {
         case ENET_SOCKOPT_ERROR:
-            len = sizeof(int);
+            len = sizeof (int);
             result = getsockopt (socket, SOL_SOCKET, SO_ERROR, (char *) value, & len);
             break;
 
@@ -252,6 +252,16 @@ enet_socket_get_option (ENetSocket socket, ENetSocketOption option, int * value)
             break;
     }
     return result == SOCKET_ERROR ? -1 : 0;
+}
+
+int
+enet_socket_get_header_size (ENetSocket socket)
+{
+    int result, type, len;
+    len = sizeof (int);
+    result = getsockopt (socket, SOL_SOCKET, SO_TYPE, (char *) & type, & len);
+    return ENET_SOCKET_INET_HEADER_SIZE 
+        + (result == 0 && type == SOCK_DGRAM ? ENET_SOCKET_DGRAM_HEADER_SIZE : ENET_SOCKET_STREAM_HEADER_SIZE);
 }
 
 int

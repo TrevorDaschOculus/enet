@@ -11,6 +11,7 @@ enum
 {
    ENET_PROTOCOL_MINIMUM_MTU             = 576,
    ENET_PROTOCOL_MAXIMUM_MTU             = 4096,
+   ENET_PROTOCOL_POTENTIAL_MTU_COUNT     = 5,
    ENET_PROTOCOL_MAXIMUM_PACKET_COMMANDS = 32,
    ENET_PROTOCOL_MINIMUM_WINDOW_SIZE     = 4096,
    ENET_PROTOCOL_MAXIMUM_WINDOW_SIZE     = 65536,
@@ -35,7 +36,9 @@ typedef enum _ENetProtocolCommand
    ENET_PROTOCOL_COMMAND_BANDWIDTH_LIMIT    = 10,
    ENET_PROTOCOL_COMMAND_THROTTLE_CONFIGURE = 11,
    ENET_PROTOCOL_COMMAND_SEND_UNRELIABLE_FRAGMENT = 12,
-   ENET_PROTOCOL_COMMAND_COUNT              = 13,
+   ENET_PROTOCOL_COMMAND_TEST_MTU           = 13,
+   ENET_PROTOCOL_COMMAND_VERIFY_MTU         = 14,
+   ENET_PROTOCOL_COMMAND_COUNT              = 15,
 
    ENET_PROTOCOL_COMMAND_MASK               = 0x0F
 } ENetProtocolCommand;
@@ -174,6 +177,18 @@ typedef struct _ENetProtocolSendFragment
    enet_uint32 fragmentOffset;
 } ENET_PACKED ENetProtocolSendFragment;
 
+typedef struct _ENetProtocolTestMtu
+{
+  ENetProtocolCommandHeader header;
+  enet_uint32 mtu;
+} ENET_PACKED ENetProtocolTestMtu;
+
+typedef struct _ENetProtocolVerifyMtu
+{
+  ENetProtocolCommandHeader header;
+  enet_uint32 mtu;
+} ENET_PACKED ENetProtocolVerifyMtu;
+
 typedef union _ENetProtocol
 {
    ENetProtocolCommandHeader header;
@@ -188,6 +203,8 @@ typedef union _ENetProtocol
    ENetProtocolSendFragment sendFragment;
    ENetProtocolBandwidthLimit bandwidthLimit;
    ENetProtocolThrottleConfigure throttleConfigure;
+   ENetProtocolTestMtu testMtu;
+   ENetProtocolVerifyMtu verifyMtu;
 } ENET_PACKED ENetProtocol;
 
 #ifdef _MSC_VER

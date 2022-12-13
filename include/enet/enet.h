@@ -212,7 +212,6 @@ enum
    ENET_HOST_RECEIVE_BUFFER_SIZE          = 256 * 1024,
    ENET_HOST_SEND_BUFFER_SIZE             = 256 * 1024,
    ENET_HOST_BANDWIDTH_THROTTLE_INTERVAL  = 1000,
-   ENET_HOST_DEFAULT_MTU                  = 1400,
    ENET_HOST_DEFAULT_MAXIMUM_PACKET_SIZE  = 32 * 1024 * 1024,
    ENET_HOST_DEFAULT_MAXIMUM_WAITING_DATA = 32 * 1024 * 1024,
 
@@ -230,6 +229,8 @@ enum
    ENET_PEER_TIMEOUT_MINIMUM              = 5000,
    ENET_PEER_TIMEOUT_MAXIMUM              = 30000,
    ENET_PEER_PING_INTERVAL                = 500,
+   ENET_PEER_TEST_MTU_INTERVAL            = 500,
+   ENET_PEER_MAXIUMUM_MTU_TEST_COUNT      = 4,
    ENET_PEER_UNSEQUENCED_WINDOWS          = 64,
    ENET_PEER_UNSEQUENCED_WINDOW_SIZE      = 1024,
    ENET_PEER_FREE_UNSEQUENCED_WINDOWS     = 32,
@@ -307,6 +308,9 @@ typedef struct _ENetPeer
    enet_uint32   roundTripTime;            /**< mean round trip time (RTT), in milliseconds, between sending a reliable packet and receiving its acknowledgement */
    enet_uint32   roundTripTimeVariance;
    enet_uint32   mtu;
+   enet_uint32   lastMtuTestTime;
+   enet_uint32   mtuTestInterval;
+   enet_uint32   mtuTestCount;
    enet_uint32   windowSize;
    enet_uint32   reliableDataInTransit;
    enet_uint16   outgoingReliableSequenceNumber;
@@ -505,6 +509,7 @@ ENET_API int        enet_socket_receive (ENetSocket, ENetAddress *, ENetBuffer *
 ENET_API int        enet_socket_wait (ENetSocket, enet_uint32 *, enet_uint32);
 ENET_API int        enet_socket_set_option (ENetSocket, ENetSocketOption, int);
 ENET_API int        enet_socket_get_option (ENetSocket, ENetSocketOption, int *);
+ENET_API int        enet_socket_get_header_size (ENetSocket);
 ENET_API int        enet_socket_shutdown (ENetSocket, ENetSocketShutdown);
 ENET_API void       enet_socket_destroy (ENetSocket);
 ENET_API int        enet_socketset_select (ENetSocket, ENetSocketSet *, ENetSocketSet *, enet_uint32);
@@ -582,6 +587,7 @@ ENET_API ENetPacket *        enet_peer_receive (ENetPeer *, enet_uint8 * channel
 ENET_API void                enet_peer_ping (ENetPeer *);
 ENET_API void                enet_peer_ping_interval (ENetPeer *, enet_uint32);
 ENET_API void                enet_peer_timeout (ENetPeer *, enet_uint32, enet_uint32, enet_uint32);
+ENET_API void                enet_peer_test_mtu (ENetPeer *, enet_uint32);
 ENET_API void                enet_peer_reset (ENetPeer *);
 ENET_API void                enet_peer_disconnect (ENetPeer *, enet_uint32);
 ENET_API void                enet_peer_disconnect_now (ENetPeer *, enet_uint32);
@@ -604,6 +610,7 @@ ENET_API size_t enet_range_coder_compress (void *, const ENetBuffer *, size_t, s
 ENET_API size_t enet_range_coder_decompress (void *, const enet_uint8 *, size_t, enet_uint8 *, size_t);
    
 extern size_t enet_protocol_command_size (enet_uint8);
+extern enet_uint32 enet_protocol_potential_mtu (enet_uint8);
 
 #ifdef __cplusplus
 }

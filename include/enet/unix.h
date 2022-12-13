@@ -43,6 +43,10 @@ typedef fd_set ENetSocketSet;
 #define ENET_SOCKETSET_ADD(sockset, socket)    FD_SET (socket, & (sockset))
 #define ENET_SOCKETSET_REMOVE(sockset, socket) FD_CLR (socket, & (sockset))
 #define ENET_SOCKETSET_CHECK(sockset, socket)  FD_ISSET (socket, & (sockset))
+
+#define ENET_SOCKET_DGRAM_HEADER_SIZE 8
+#define ENET_SOCKET_STREAM_HEADER_SIZE 20
+#define ENET_SOCKET_INET_HEADER_SIZE 60
     
 #endif /* __ENET_UNIX_H__ */
 

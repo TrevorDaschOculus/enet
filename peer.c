@@ -421,6 +421,9 @@ enet_peer_reset (ENetPeer * peer)
     peer -> roundTripTime = ENET_PEER_DEFAULT_ROUND_TRIP_TIME;
     peer -> roundTripTimeVariance = 0;
     peer -> mtu = peer -> host -> mtu;
+    peer -> lastMtuTestTime = 0;
+    peer -> mtuTestInterval = ENET_PEER_TEST_MTU_INTERVAL;
+    peer -> mtuTestCount = 0;
     peer -> reliableDataInTransit = 0;
     peer -> outgoingReliableSequenceNumber = 0;
     peer -> windowSize = ENET_PROTOCOL_MAXIMUM_WINDOW_SIZE;
@@ -454,6 +457,35 @@ enet_peer_ping (ENetPeer * peer)
     command.header.channelID = 0xFF;
    
     enet_peer_queue_outgoing_command (peer, & command, NULL, 0, 0);
+}
+
+/** Sends an mtu test request to a peer.
+    @param peer destination for the mtu test request
+    @remarks mtu test requests attempt to find the maximum mtu a peer will respond to.  
+    ENet automatically tests the mtu of all connected peers however, 
+    this function may be called to ensure a higher mtu is available.
+*/
+void
+enet_peer_test_mtu (ENetPeer * peer, enet_uint32 mtu)
+{
+  ENetProtocol command;
+
+  if (peer -> state != ENET_PEER_STATE_CONNECTED)
+    return;
+
+  // we have already verified the client's MTU is higher than the MTU we want to test
+  if (peer -> mtu > mtu)
+    return;
+
+  // we can only test MTU up to the maximum
+  if (mtu > ENET_PROTOCOL_MAXIMUM_MTU)
+    mtu = ENET_PROTOCOL_MAXIMUM_MTU;
+
+  command.header.command = ENET_PROTOCOL_COMMAND_TEST_MTU;
+  command.header.channelID = 0xFF;
+  command.testMtu.mtu = ENET_HOST_TO_NET_32 (mtu);
+
+  enet_peer_queue_outgoing_command (peer, & command, NULL, 0, 0);
 }
 
 /** Sets the interval at which pings will be sent to a peer. 

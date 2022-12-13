@@ -82,7 +82,7 @@ enet_host_create (const ENetAddress * address, size_t peerCount, size_t channelL
     host -> outgoingBandwidth = outgoingBandwidth;
     host -> bandwidthThrottleEpoch = 0;
     host -> recalculateBandwidthLimits = 0;
-    host -> mtu = ENET_HOST_DEFAULT_MTU;
+    host -> mtu = ENET_PROTOCOL_MINIMUM_MTU - enet_socket_get_header_size (host -> socket);
     host -> peerCount = peerCount;
     host -> commandCount = 0;
     host -> bufferCount = 0;

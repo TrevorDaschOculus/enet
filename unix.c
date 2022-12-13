@@ -373,6 +373,16 @@ enet_socket_get_option (ENetSocket socket, ENetSocketOption option, int * value)
 }
 
 int
+enet_socket_get_header_size (ENetSocket socket)
+{
+    int result, type;
+    socklen_t len = sizeof (int);
+    result = getsockopt (socket, SOL_SOCKET, SO_TYPE, (char *) & type, & len);
+    return ENET_SOCKET_INET_HEADER_SIZE
+        + (result == 0 && type == SOCK_DGRAM ? ENET_SOCKET_DGRAM_HEADER_SIZE : ENET_SOCKET_STREAM_HEADER_SIZE);
+}
+
+int
 enet_socket_connect (ENetSocket socket, const ENetAddress * address)
 {
     struct sockaddr_in sin;
