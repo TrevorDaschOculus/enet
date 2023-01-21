@@ -122,10 +122,13 @@ typedef struct _ENetSslConfiguration
    ENetSslMode   mode;
    // Server Params
    const char *  certificatePath;
+   const char *  certificate;
    const char *  privateKeyPath;
+   const char *  privateKey;
    // Client Params
    int           validateCertificate;
    const char *  rootCertificatePath;
+   const char *  rootCertificate;
 } ENetSslConfiguration;
 
 typedef struct _ENetSslSocket

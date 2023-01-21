@@ -490,6 +490,165 @@ void BIO_s_enet_meth_free(void)
    _BIO_s_enet = NULL;
 }
 
+static int SSL_CTX_use_certificate_chain_data (SSL_CTX * ctx, const char * data)
+{
+   BIO * in;
+   int ret = 0;
+   X509 * x = NULL;
+   pem_password_cb * passwd_callback;
+   void * passwd_callback_userdata;
+
+   if (ctx == NULL)
+      return 0;
+
+   ERR_clear_error (); //clear error stack for SSL_CTX_use_certificate()
+
+   passwd_callback = SSL_CTX_get_default_passwd_cb (ctx);
+   passwd_callback_userdata = SSL_CTX_get_default_passwd_cb_userdata (ctx);
+
+   in = BIO_new_mem_buf ((void *)data, -1);
+   if (in == NULL) 
+      return 0;
+
+   if ((x = PEM_read_bio_X509_AUX (in, NULL, passwd_callback,
+                                   passwd_callback_userdata)) == NULL) 
+      goto end;
+
+   ret = SSL_CTX_use_certificate (ctx, x);
+    
+   if (ERR_peek_error() != 0)
+      ret = 0; // Key/certificate mismatch doesn't imply ret==0 ...
+
+   if (ret) 
+   {
+      // If we could set up our certificate, now proceed to the CA certificates.
+      X509 *ca;
+      unsigned long err;
+
+      if (SSL_CTX_clear_chain_certs (ctx) == 0) 
+      {
+         ret = 0;
+         goto end;
+      }
+
+      while ((ca = PEM_read_bio_X509(in, NULL, passwd_callback,
+                                     passwd_callback_userdata)) != NULL)
+      {
+         // Note that we must not free ca if it was successfully added to
+         // the chain (while we must free the main certificate, since its
+         // reference count is increased by SSL_CTX_use_certificate).
+         if (!SSL_CTX_add0_chain_cert (ctx, ca)) 
+         {
+            X509_free (ca);
+            ret = 0;
+            goto end;
+         }
+      }
+      // When the while loop ends, it's usually just EOF.
+      err = ERR_peek_last_error ();
+      if (ERR_GET_LIB (err) == ERR_LIB_PEM
+          && ERR_GET_REASON (err) == PEM_R_NO_START_LINE)
+         ERR_clear_error();
+      else
+         ret = 0; // some real error
+   }
+
+end:
+   X509_free(x);
+   BIO_free(in);
+   return ret;
+}
+
+static int SSL_CTX_use_PrivateKey_data (SSL_CTX * ctx, const char * data, int type)
+{
+   int ret = 0;
+   BIO * in;
+   EVP_PKEY * pkey = NULL;
+   pem_password_cb* passwd_callback;
+   void* passwd_callback_userdata;
+
+   if (ctx == NULL)
+     return 0;
+
+   ERR_clear_error(); //clear error stack for SSL_CTX_use_PrivateKey ()
+
+   passwd_callback = SSL_CTX_get_default_passwd_cb (ctx);
+   passwd_callback_userdata = SSL_CTX_get_default_passwd_cb_userdata (ctx);
+
+   in = BIO_new_mem_buf ((void *)data, -1);
+   if (in == NULL) 
+      return 0;
+
+   if (type == SSL_FILETYPE_PEM) 
+   {
+      pkey = PEM_read_bio_PrivateKey (in, NULL,
+                                      passwd_callback,
+                                      passwd_callback_userdata);
+   } else
+      goto end;
+
+   if (pkey == NULL) 
+      goto end;
+
+   ret = SSL_CTX_use_PrivateKey (ctx, pkey);
+   EVP_PKEY_free (pkey);
+end:
+   BIO_free (in);
+   return ret;
+}
+
+static int SSL_CTX_load_verify_data (SSL_CTX * ctx, const char * data)
+{
+   BIO * in;
+   int ret = 0;
+   X509_STORE * cert_store = NULL;
+   pem_password_cb* passwd_callback;
+   void* passwd_callback_userdata;
+
+   if (ctx == NULL)
+      return 0;
+
+   ERR_clear_error (); //clear error stack for SSL_CTX_get_cert_store ()
+
+   passwd_callback = SSL_CTX_get_default_passwd_cb (ctx);
+   passwd_callback_userdata = SSL_CTX_get_default_passwd_cb_userdata (ctx);
+
+   cert_store = SSL_CTX_get_cert_store (ctx);
+   if (cert_store == NULL)
+      return 0;
+
+   in = BIO_new_mem_buf ((void *)data, -1);
+   if (in == NULL) 
+      return 0;
+
+   X509 *ca;
+   int r;
+   unsigned long err;
+
+   while ((ca = PEM_read_bio_X509 (in, NULL, passwd_callback,
+                                   passwd_callback_userdata)) != NULL)
+   {
+      r = X509_STORE_add_cert (cert_store, ca);
+      X509_free (ca);
+      if (!r)
+      {
+         ret = 0;
+         goto end;
+      }
+   }
+   // When the while loop ends, it's usually just EOF.
+   err = ERR_peek_last_error ();
+   if (ERR_GET_LIB (err) == ERR_LIB_PEM
+       && ERR_GET_REASON (err) == PEM_R_NO_START_LINE)
+      ERR_clear_error();
+   else
+      ret = 0; // some real error
+
+end:
+   BIO_free(in);
+   return ret;
+}
+
 ENetSslSocket *
 enet_ssl_socket_create (const ENetSslConfiguration * sslConfiguration)
 {
@@ -517,22 +676,64 @@ enet_ssl_socket_create (const ENetSslConfiguration * sslConfiguration)
 
    if (ssl -> mode == ENET_SSL_MODE_SERVER)
    {
-      if (sslConfiguration -> certificatePath == NULL || !SSL_CTX_use_certificate_chain_file (ssl -> ctx, sslConfiguration -> certificatePath))
+      if (sslConfiguration -> certificatePath != NULL && sslConfiguration -> certificatePath [0] != '\0')
       {
+         if (!SSL_CTX_use_certificate_chain_file (ssl -> ctx, sslConfiguration -> certificatePath))
+         {
 #ifdef ENET_DEBUG
-         fprintf (stderr, "ERROR: no certificate found!\n");
+            fprintf (stderr, "ERROR: failed to load certificate file!\n");
 #endif
-         enet_ssl_socket_destroy (ssl);
-         return NULL;
+            enet_ssl_socket_destroy (ssl);
+            return NULL;
+         }
+      }
+      else if (sslConfiguration -> certificate != NULL && sslConfiguration -> certificate [0] != '\0')
+      {
+         if (!SSL_CTX_use_certificate_chain_data (ssl -> ctx, sslConfiguration -> certificate))
+         {
+#ifdef ENET_DEBUG
+            fprintf (stderr, "ERROR: failed to load certificate data!\n");
+#endif
+            enet_ssl_socket_destroy (ssl);
+            return NULL;
+         }
+      }
+      else {
+#ifdef ENET_DEBUG
+            fprintf (stderr, "ERROR: no certificate provided!\n");
+#endif
+            enet_ssl_socket_destroy (ssl);
+            return NULL;
       }
 
-      if (sslConfiguration -> privateKeyPath == NULL || !SSL_CTX_use_PrivateKey_file (ssl -> ctx, sslConfiguration -> privateKeyPath, SSL_FILETYPE_PEM))
+      if (sslConfiguration -> privateKeyPath != NULL && sslConfiguration -> privateKeyPath [0] != '\0')
       {
+         if (!SSL_CTX_use_PrivateKey_file (ssl -> ctx, sslConfiguration -> privateKeyPath, SSL_FILETYPE_PEM))
+         {
 #ifdef ENET_DEBUG
-         fprintf (stderr, "ERROR: no private key found!\n");
+            fprintf (stderr, "ERROR: failed to load private key file!\n");
 #endif
-         enet_ssl_socket_destroy (ssl);
-         return NULL;
+            enet_ssl_socket_destroy (ssl);
+            return NULL;
+         }
+      }
+      if (sslConfiguration -> privateKey != NULL && sslConfiguration -> privateKey [0] != '\0')
+      {
+         if (!SSL_CTX_use_PrivateKey_data (ssl -> ctx, sslConfiguration -> privateKey, SSL_FILETYPE_PEM))
+         {
+#ifdef ENET_DEBUG
+            fprintf (stderr, "ERROR: failed to load private key data!\n");
+#endif
+            enet_ssl_socket_destroy (ssl);
+            return NULL;
+         }
+      }
+      else {
+#ifdef ENET_DEBUG
+            fprintf (stderr, "ERROR: no private key provided!\n");
+#endif
+            enet_ssl_socket_destroy (ssl);
+            return NULL;         
       }
 
       if (!SSL_CTX_check_private_key (ssl -> ctx))
@@ -552,16 +753,19 @@ enet_ssl_socket_create (const ENetSslConfiguration * sslConfiguration)
       SSL_CTX_set_verify (ssl -> ctx, SSL_VERIFY_PEER, enet_verify_server);
       SSL_CTX_set_default_verify_paths (ssl -> ctx);
 
-      if (sslConfiguration -> rootCertificatePath != NULL)
+      if (sslConfiguration -> rootCertificatePath != NULL && sslConfiguration -> rootCertificatePath [0] != '\0')
       {
          SSL_CTX_load_verify_locations (ssl -> ctx, sslConfiguration -> rootCertificatePath, NULL);
+      }
+      if (sslConfiguration -> rootCertificate != NULL && sslConfiguration -> rootCertificate [0] != '\0')
+      {
+         SSL_CTX_load_verify_data (ssl -> ctx, sslConfiguration -> rootCertificate);
       }
 
       if (sslConfiguration -> validateCertificate == 0)
       {
          SSL_CTX_set_cert_verify_callback (ssl -> ctx, enet_allow_all_certificates, NULL);
       }
-
    }
 
    SSL_CTX_set_verify_depth (ssl -> ctx, 3);
