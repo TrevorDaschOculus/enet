@@ -129,6 +129,7 @@ typedef struct _ENetSslConfiguration
    int           validateCertificate;
    const char *  rootCertificatePath;
    const char *  rootCertificate;
+   const char *  hostName;
 } ENetSslConfiguration;
 
 typedef struct _ENetSslSocket
@@ -137,6 +138,7 @@ typedef struct _ENetSslSocket
    ENetSslCtx *  ctx;
    ENetSocket    socket;
    ENetList      connectionList;
+   char *        hostName;
    enet_uint8    sendBuffer [ENET_PROTOCOL_MAXIMUM_MTU];
 } ENetSslSocket;
 

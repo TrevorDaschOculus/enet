@@ -6,6 +6,7 @@
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/opensslv.h>
+#include <openssl/x509v3.h>
 
 #ifdef __cplusplus
 extern "C"
