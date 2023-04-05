@@ -3,25 +3,54 @@
 #include "enet/ssl.h"
 #include <string.h>
 
+#define COOKIE_COUNT 2
 #define COOKIE_SECRET_LENGTH 16
+// use a 5 minute window for cookie rotation
+#define COOKIE_ROTATION_INTERVAL 300000
 
-unsigned char cookie_secret [COOKIE_SECRET_LENGTH];
-int cookie_initialized = 0;
+typedef struct _ENetCookie {
+   unsigned char secret [COOKIE_SECRET_LENGTH];
+   enet_uint32 init_time;
+} ENetCookie;
+
+static ENetCookie cookies[COOKIE_COUNT];
+static int cookies_initialized = 0;
+static int cookie_index = 0;
+
+int
+enet_init_cookie (int i)
+{
+   if (!RAND_bytes (cookies [i].secret, COOKIE_SECRET_LENGTH))
+   {
+#ifdef ENET_DEBUG
+      perror ("error setting random cookie secret");
+#endif
+      return 0;
+   }
+   cookies [i].init_time = enet_time_get ();
+   return 1;
+}
 
 int 
 enet_generate_cookie (SSL * ssl, unsigned char * cookie, unsigned int * cookie_len)
 {
-   // Initialize the random secret
-   if (!cookie_initialized)
+   // Initialize our cookie secrets
+   if (!cookies_initialized)
    {
-      if (!RAND_bytes (cookie_secret, COOKIE_SECRET_LENGTH))
+      for (int i = 0; i < COOKIE_COUNT; i++) 
       {
-#ifdef ENET_DEBUG
-         perror ("error setting random cookie secret");
-#endif
-         return 0;
+         if (!enet_init_cookie (i)) 
+            return 0;
       }
-      cookie_initialized = 1;
+      cookies_initialized = 1;
+   }
+
+   // Try Rotating Cookies if necessary
+   if (cookies [cookie_index].init_time + COOKIE_ROTATION_INTERVAL < enet_time_get ()) 
+   {
+      cookie_index = (cookie_index + 1) % COOKIE_COUNT;
+      if (!enet_init_cookie (cookie_index))
+         return 0;
    }
 
    // read the incoming address
@@ -31,10 +60,10 @@ enet_generate_cookie (SSL * ssl, unsigned char * cookie, unsigned int * cookie_l
    // Calculate HMAC of buffer using the secret
    unsigned int resultLength = 0;
    unsigned char result [EVP_MAX_MD_SIZE];
-   HMAC (EVP_sha1(), 
-         (const void *)cookie_secret, 
+   HMAC (EVP_sha1 (), 
+         (const void *) cookies [cookie_index].secret, 
          COOKIE_SECRET_LENGTH,
-         (const unsigned char *)& address, 
+         (const unsigned char *) & address, 
          sizeof (ENetAddress), 
          result, 
          & resultLength);
@@ -49,26 +78,37 @@ int
 enet_verify_cookie (SSL * ssl, const unsigned char * cookie, unsigned int cookie_len)
 {
    // If secret isn't initialized yet, the cookie can't be valid
-   if (!cookie_initialized)
+   if (!cookies_initialized)
       return 0;
 
    // read the incoming address
    ENetAddress address;
    BIO_dgram_get_peer (SSL_get_rbio (ssl), & address);
 
-   // Calculate HMAC of buffer using the secret
    unsigned int resultLength = 0;
    unsigned char result [EVP_MAX_MD_SIZE];
-   HMAC (EVP_sha1(), 
-         (const void *)cookie_secret, 
-         COOKIE_SECRET_LENGTH,
-         (const unsigned char *)& address, 
-         sizeof (ENetAddress), 
-         result, 
-         & resultLength);
 
-  if (cookie_len == resultLength && memcmp (result, cookie, resultLength) == 0)
-     return 1;
+   // Calculate HMAC of buffer using all of our secrets (it's possible the secret was used just prior to rotation)
+   for (int i = 0; i < COOKIE_COUNT; i++)
+   {
+      // check the most recent cookie first, then work backwards through the list
+      int ci = (cookie_index + COOKIE_COUNT - i) % COOKIE_COUNT;
+
+      // don't compare with very old secrets (we only generate new secrets in enet_generate_cookie)
+      if (cookies [ci].init_time + COOKIE_ROTATION_INTERVAL * COOKIE_COUNT < enet_time_get ())
+         continue;
+
+      HMAC (EVP_sha1 (),
+            (const void *) cookies [ci].secret,
+            COOKIE_SECRET_LENGTH,
+            (const unsigned char *) & address,
+            sizeof (ENetAddress),
+            result,
+            & resultLength);
+
+     if (cookie_len == resultLength && CRYPTO_memcmp (result, cookie, resultLength) == 0)
+        return 1;
+   }
 
   return 0;
 }
