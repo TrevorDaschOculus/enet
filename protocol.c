@@ -834,13 +834,13 @@ enet_protocol_handle_test_mtu (ENetHost * host, ENetPeer * peer, const ENetProto
 
   mtu = ENET_NET_TO_HOST_32 (command -> testMtu.mtu);
 
-  * currentData = & host ->receivedData [mtu];
+  * currentData = & host -> receivedData [mtu];
   if (mtu > host -> maximumPacketSize ||
-        * currentData < host -> receivedData ||
+        * currentData - sizeof (enet_uint32) < host -> receivedData ||
         * currentData > & host -> receivedData [host -> receivedDataLength])
       return -1;
 
-  compareMtu = ENET_NET_TO_HOST_32 (* (enet_uint32 *) (* currentData - 4));
+  compareMtu = ENET_NET_TO_HOST_32 (* (enet_uint32 *) (* currentData - sizeof (enet_uint32)));
 
   if (mtu == compareMtu)
   {
@@ -1764,11 +1764,11 @@ enet_protocol_send_outgoing_commands (ENetHost * host, ENetEvent * event, int ch
              host -> buffers [host -> bufferCount].dataLength -= host -> buffers [i].dataLength;
 
            if (host -> checksum != NULL)
-             host -> buffers [host -> bufferCount].dataLength -= sizeof(enet_uint32);
+             host -> buffers [host -> bufferCount].dataLength -= sizeof (enet_uint32);
 
            // clear buffer and set the last 4 bytes to the mtu
            memset (host -> packetData [1], 0, host -> buffers [host -> bufferCount].dataLength);
-           * (enet_uint32 *) (host -> packetData [1] + host -> buffers [host -> bufferCount].dataLength - 4) = host -> commands [0].testMtu.mtu;
+           * (enet_uint32 *) (host -> packetData [1] + host -> buffers [host -> bufferCount].dataLength - sizeof (enet_uint32)) = host -> commands [0].testMtu.mtu;
 
            ++ host -> bufferCount;
         }
