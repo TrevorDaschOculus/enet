@@ -40,7 +40,7 @@ static const enet_uint32 potentialMtus[ENET_PROTOCOL_POTENTIAL_MTU_COUNT] =
     1232,
     1328,
     1460,
-    1500
+    ENET_PROTOCOL_MAXIMUM_MTU
 };
 
 enet_uint32
