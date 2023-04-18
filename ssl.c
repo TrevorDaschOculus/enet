@@ -245,6 +245,9 @@ enet_ssl_socket_connection_create (ENetSslSocket * ssl)
    // set the bio for our ssl
    SSL_set_bio (connection -> ssl, connection -> bio, connection -> bio);
 
+   // set our initial mtu to minimum
+   SSL_set_mtu (connection -> ssl, ENET_PROTOCOL_MINIMUM_MTU - enet_socket_get_header_size (connection -> socket));
+
    // set connection timeout to 5 seconds
    connection -> timeout.tv_sec = 5;
    connection -> timeout.tv_usec = 0;
@@ -347,6 +350,9 @@ enet_ssl_socket_connection_update_connection_state (ENetSslSocketConnection * co
 
    // Connected successfully!
    connection -> state = ENET_SSL_SOCKET_CONNECTION_STATE_CONNECTED;
+
+   // increase our mtu to maximum (data size will still be limited)
+   SSL_set_mtu (connection -> ssl, ENET_PROTOCOL_MAXIMUM_MTU - enet_socket_get_header_size (connection -> socket));
 
    // mark the last read time for our manual timeout
    connection -> lastReadTime = enet_time_get ();
@@ -461,13 +467,13 @@ long BIO_s_enet_ctrl (BIO * b, int cmd, long larg, void * pargs)
       ret = 0;
       break;
    case BIO_CTRL_DGRAM_QUERY_MTU:
-      ret = ENET_PROTOCOL_MAXIMUM_MTU;
+      ret = ENET_PROTOCOL_MAXIMUM_MTU - enet_socket_get_header_size (connection -> socket);
       break;
    case BIO_CTRL_DGRAM_GET_FALLBACK_MTU:
-      ret = ENET_PROTOCOL_MINIMUM_MTU;
+      ret = ENET_PROTOCOL_MINIMUM_MTU - enet_socket_get_header_size (connection -> socket);
       break;
    case BIO_CTRL_DGRAM_GET_MTU_OVERHEAD:
-      ret = 48; // 40 bytes for IP, 8 for UDP
+      ret = enet_socket_get_header_size (connection -> socket);
     break;
    case BIO_CTRL_EOF:
    case BIO_CTRL_PUSH:
@@ -830,6 +836,7 @@ enet_ssl_socket_create (const ENetSslConfiguration * sslConfiguration)
 
    SSL_CTX_set_verify_depth (ssl -> ctx, 3);
    SSL_CTX_set_read_ahead (ssl -> ctx, 1);
+   SSL_CTX_set_options (ssl -> ctx, SSL_OP_NO_QUERY_MTU);
 
    return ssl;
 }
